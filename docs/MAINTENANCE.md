@@ -4,7 +4,7 @@
 
 - Pi 1.5.x; both Pi development packages are pinned together to 1.5.0.
 - Node.js 22.19.0 and 24 are checked in CI. Node declarations track the 24.x line.
-- ACP SDK 1.8.0 / stable protocol 1 (not experimental ACP v2). Both stable configuration selectors and older official Antigravity model APIs are supported and validated.
+- ACP SDK 2.2.0 / protocol 1 (not experimental ACP v2), using the full-v1 `/unstable` entrypoint for draft usage and session lifecycle fields. Both stable configuration selectors and older official Antigravity model APIs are supported and validated.
 - Host-provided Pi packages remain wildcard peers and are not bundled, following Pi's package contract. The README's compatibility statement defines tested support.
 
 ## Dependency updates
@@ -15,7 +15,7 @@ Before merging, require the Node 22.19.0 and 24 checks: typecheck, tests, pack d
 
 Pi 1.5.0 pins patched Undici 8.12.3 and minimatch 11.0.3, so the former development-tree Undici override is no longer needed. The lockfile also selects patched `@hono/node-server` 2.1.6. These development dependencies do not patch a user's separately installed Pi host; keep the host's dependencies updated as well.
 
-ACP SDK 2.x removes `ClientSideConnection` and moves features used by this provider out of its default exports. Keep SDK 1.8.0 until a separately reviewed migration preserves model selection, usage reporting, cancellation and permission behavior; a dependency-only major bump is not safe.
+ACP SDK 2.x removes `ClientSideConnection`. The provider uses `client().onRequest(...).onNotification(...).connect(...)`, peer-context requests/notifications, and explicit SDK lifecycle shutdown. All protocol imports use `@agentclientprotocol/sdk/unstable` consistently because draft prompt usage and session lifecycle fields are not part of the default stable-only profile. This is still ACP v1, not draft v2; pin SDK updates and retain model-selection, usage, cancellation, permission and transport regression coverage. See [ACP-SDK-MIGRATION.md](ACP-SDK-MIGRATION.md).
 
 TypeScript 7.0.2 is supported. The multiprocess session-store tests bundle the actual implementation with explicitly declared esbuild, avoiding removed compiler APIs while retaining independent process lock contention. Node 26 declarations are intentionally excluded until that runtime is supported.
 

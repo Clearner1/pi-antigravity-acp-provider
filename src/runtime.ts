@@ -4,7 +4,7 @@ import type {
 	RequestPermissionRequest,
 	RequestPermissionResponse,
 	SessionNotification,
-} from "@agentclientprotocol/sdk";
+} from "@agentclientprotocol/sdk/unstable";
 import {
 	collapseSystemMessages,
 	getCurrentSystemPrompt,

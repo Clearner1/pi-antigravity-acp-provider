@@ -1,4 +1,4 @@
-import type { ContentBlock } from "@agentclientprotocol/sdk";
+import type { ContentBlock } from "@agentclientprotocol/sdk/unstable";
 import { getCurrentSystemPrompt, type Context, type Message } from "@earendil-works/pi-ai";
 
 import { AntigravityAcpError } from "../acp/errors.js";

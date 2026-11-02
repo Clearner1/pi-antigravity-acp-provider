@@ -1,4 +1,4 @@
-import type { McpServer as AcpMcpServer } from "@agentclientprotocol/sdk";
+import type { McpServer as AcpMcpServer } from "@agentclientprotocol/sdk/unstable";
 import type { Tool } from "@earendil-works/pi-ai";
 import {
 	CallToolRequestSchema,
