@@ -41,7 +41,7 @@ for await (const line of rl) {
 	}
 	const { id, method, params } = message;
 	if (process.env.FAKE_AGENT_LOG_FILE && method) fs.appendFileSync(process.env.FAKE_AGENT_LOG_FILE,
-		JSON.stringify({ method, ...(method === "session/prompt" ? { prompt: params.prompt, mode } : {}), ...(method === "session/set_mode" ? { modeId: params.modeId } : {}) }) + "\n");
+		JSON.stringify({ method, ...(method === "initialize" ? { params } : {}), ...(method === "session/prompt" ? { prompt: params.prompt, mode } : {}), ...(method === "session/set_mode" ? { modeId: params.modeId } : {}) }) + "\n");
 	if (id === "permission-1" && method === undefined) {
 		if (permissionPromptId === undefined) continue;
 		const decision = message.result?.outcome?.outcome ?? "cancelled";
@@ -301,7 +301,10 @@ for await (const line of rl) {
 			id,
 			result: {
 				stopReason: "end_turn",
-				_meta: { quota: { token_count: { input_tokens: 7, output_tokens: 3 }, model_usage: [] } },
+				...(scenario === "sdk-usage" ? {
+					usage: { inputTokens: 17, outputTokens: 5, totalTokens: 22, cachedReadTokens: 3, thoughtTokens: 2 },
+					_meta: { quota: { remaining: 12, limit: 20 } },
+				} : { _meta: { quota: { token_count: { input_tokens: 7, output_tokens: 3 }, model_usage: [] } } }),
 			},
 		});
 	} else {

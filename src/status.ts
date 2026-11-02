@@ -1,4 +1,4 @@
-import type { PromptResponse } from "@agentclientprotocol/sdk";
+import type { PromptResponse } from "@agentclientprotocol/sdk/unstable";
 import type { Usage } from "@earendil-works/pi-ai";
 
 export interface QuotaSnapshot {
