@@ -1,4 +1,4 @@
-# ACP SDK 2.1 migration
+# ACP SDK 2.2 migration
 
 The provider upgrades the SDK from 1.8.0 to 2.2.0 without changing the wire protocol: it still negotiates **ACP v1**. SDK package version 2 does not imply ACP protocol v2.
 
