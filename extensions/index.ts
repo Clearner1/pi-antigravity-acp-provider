@@ -6,6 +6,7 @@ import { Type } from "typebox";
 
 import { inspectAntigravityAuth } from "../src/acp/antigravity.js";
 import { describeCredentialStorage } from "../src/acp/credential-storage.js";
+import { errorMessage } from "../src/acp/errors.js";
 import { resolveAntigravityAcpEntry } from "../src/acp/process.js";
 import {
 	checkAntigravityAcpUpdate,
@@ -25,7 +26,9 @@ import {
 	ACP_PROTOCOL_VERSION,
 	ACP_SDK_VERSION,
 	PACKAGE_VERSION,
+	QUOTA_REQUEST_CHANNEL,
 } from "../src/constants.js";
+import type { AntigravityQuotaSnapshot } from "../src/acp/usage-quota.js";
 import {
 	PERMISSION_RESULT_KIND,
 	PERMISSION_TOOL_NAME,
@@ -35,6 +38,14 @@ import {
 import { acquireSharedRuntime, releaseSharedRuntime } from "../src/shared-runtime.js";
 import { runSetupWizard } from "../src/wizard.js";
 
+export type { AntigravityQuotaSnapshot } from "../src/acp/usage-quota.js";
+
+// Instances sharing an event bus all hear each request; the first to claim it replies. Pi loads every
+// instance without a module cache, so the claims live on globalThis.
+const CLAIMED_QUOTA_REQUESTS = Symbol.for("pi-antigravity-acp:quota-requests");
+const claimSlots = globalThis as unknown as Record<symbol, WeakSet<object> | undefined>;
+const claimedQuotaRequests = (claimSlots[CLAIMED_QUOTA_REQUESTS] ??= new WeakSet());
+
 export default function antigravityAcpExtension(pi: ExtensionAPI): void {
 	registerAntigravityAcp(pi);
 }
@@ -43,6 +54,23 @@ export function registerAntigravityAcp(pi: ExtensionAPI, connectionFactory?: Ant
 	const shared = acquireSharedRuntime(connectionFactory);
 	const { runtime, provider } = shared;
 	pi.registerProvider(provider);
+
+	// Other extensions ask for quota with `{ reply }` and get exactly one `{ ok, quota | error }`.
+	const unsubscribeQuota = pi.events.on(QUOTA_REQUEST_CHANNEL, (data) => {
+		const reply = (data as { reply?: unknown } | undefined)?.reply;
+		if (typeof reply !== "function" || claimedQuotaRequests.has(data as object)) return;
+		claimedQuotaRequests.add(data as object);
+		void runtime.quota(undefined).then(
+			(quota) => ({ ok: true as const, quota }),
+			(error: unknown) => ({ ok: false as const, error: errorMessage(error) }),
+		).then((result) => {
+			try {
+				reply(result);
+			} catch {
+				// A failing listener must not get a second reply.
+			}
+		});
+	});
 
 	pi.registerTool({
 		name: PERMISSION_TOOL_NAME,
@@ -126,8 +154,11 @@ export function registerAntigravityAcp(pi: ExtensionAPI, connectionFactory?: Ant
 				return;
 			}
 			if (command === "quota") {
-				const metrics = (await runtime.snapshot()).metrics;
-				ctx.ui.notify(formatMetrics(metrics), "info");
+				const quota = await runtime.quota(undefined).then(
+					formatQuota,
+					(error: unknown) => `Antigravity quota: unavailable (${errorMessage(error)})`,
+				);
+				ctx.ui.notify([quota, formatMetrics((await runtime.snapshot()).metrics)].join("\n"), "info");
 				return;
 			}
 			if (command === "qualify") {
@@ -231,6 +262,7 @@ export function registerAntigravityAcp(pi: ExtensionAPI, connectionFactory?: Ant
 	});
 
 	pi.on("session_shutdown", async (event, ctx) => {
+		unsubscribeQuota();
 		await runtime.closeSession(ctx.sessionManager.getSessionId());
 		await releaseSharedRuntime(shared, event.reason);
 	});
@@ -255,8 +287,17 @@ function formatMetrics(metrics: {
 	const quota = metrics.latestQuota;
 	return [
 		`Usage this process: turns=${metrics.totals.turns} tokens=${totalTokens} input=${metrics.totals.input} output=${metrics.totals.output} reasoning=${metrics.totals.reasoning} cacheRead=${metrics.totals.cacheRead}`,
-		quota
-			? `Latest quota: remaining=${quota.remaining ?? "unknown"}/${quota.limit ?? "unknown"} reset=${quota.resetAt ?? "unknown"} tier=${quota.tier ?? "unknown"} model=${quota.model ?? "unknown"}`
-			: "Latest quota: not supplied by the Antigravity server",
+		...(quota
+			? [`Latest quota: remaining=${quota.remaining ?? "unknown"}/${quota.limit ?? "unknown"} reset=${quota.resetAt ?? "unknown"} tier=${quota.tier ?? "unknown"} model=${quota.model ?? "unknown"}`]
+			: []),
+	].join("\n");
+}
+
+function formatQuota(snapshot: AntigravityQuotaSnapshot): string {
+	return [
+		"Antigravity quota:",
+		...snapshot.groups.map((group) => `  ${group.displayName}: ${group.buckets.length
+			? group.buckets.map((bucket) => `${bucket.window} ${Math.round(bucket.remainingFraction * 100)}%${bucket.resetTime ? ` (resets ${bucket.resetTime})` : ""}`).join(", ")
+			: "no percentage limits reported"}`),
 	].join("\n");
 }
