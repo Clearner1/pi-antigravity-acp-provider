@@ -327,18 +327,22 @@ describe("abort cleanup", () => {
 });
 
 describe("quota exhaustion", () => {
+	afterEach(() => { vi.restoreAllMocks(); });
+
 	function quotaSetup() {
 		const fixture = setup();
 		const store = new AcpSessionStore(path.join(fixture.root, "sessions.json"));
 		return { store, ...setup("quota-exhausted", "yolo", store) };
 	}
 
-	it("ends the turn with an error that carries the relative reset time", async () => {
+	it.each([0, 429])("ends the turn with a relative reset time (%i milliseconds)", async (milliseconds) => {
+		// A valid ISO reset timestamp may contain .429Z; it is not an HTTP 429 error.
+		vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 10, 5, 21, 50, 0, milliseconds));
 		const { runtime, store } = quotaSetup();
 		const message = await turn(runtime, [user("relative")], "quota");
 		expect(message.stopReason).toBe("error");
 		expect(message.errorMessage).toMatch(/^Antigravity quota exceeded for \S+\. Resets at \S+\.$/u);
-		expect(message.errorMessage).not.toMatch(/429|rate limit|try again in|reset in/iu);
+		expect(message.errorMessage).not.toMatch(/\b429\b|rate limit|try again in|reset in/iu);
 		const resetAt = Date.parse(/Resets at (\S+)\.$/u.exec(message.errorMessage!)![1]!);
 		expect(Math.abs(resetAt - (Date.now() + 231 * 60_000))).toBeLessThan(60_000);
 		const snapshot = await runtime.snapshot();
