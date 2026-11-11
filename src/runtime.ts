@@ -625,10 +625,14 @@ export class AntigravityRuntime {
 			) {
 				unseenStart += 1;
 			}
-			const parts = adaptPromptToCapabilities(
-				buildPromptParts(context, fresh, unseenStart),
-				binding.initialize,
-			);
+			const promptParts = buildPromptParts(context, fresh, unseenStart);
+			if (binding.bridge && !binding.bridge.empty) {
+				promptParts.prompt.unshift({ type: "resource", resource: {
+					uri: "urn:pi:antigravity-acp:tool-routing",
+					mimeType: "text/markdown", text: binding.bridge.instructions,
+				} });
+			}
+			const parts = adaptPromptToCapabilities(promptParts, binding.initialize);
 			await this.modeChanges;
 			this.assertEpoch(epoch);
 			if (binding.mode !== this.permissionMode || this.confirmedMode(binding) !== this.permissionMode || !binding.connection.process.alive) {

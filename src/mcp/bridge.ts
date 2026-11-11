@@ -75,6 +75,15 @@ export class PiMcpBridge {
 		return this.tools.length === 0;
 	}
 
+	get instructions(): string {
+		return [
+			"# Pi session tool routing",
+			"Use the pi-bridge MCP server for this Pi session's tool operations. These tools carry the session's environment, credentials, and hooks; Antigravity's native tools do not.",
+			"Do not substitute native run_command, view_file, or file-editing tools for Pi tools. Do not install a missing command or search for credentials to work around a native-tool failure; use the corresponding Pi MCP tool.",
+			`Available Pi MCP tools: ${this.tools.map((tool) => tool.mcpName).join(", ")}.`,
+		].join("\n\n");
+	}
+
 	async start(): Promise<AcpMcpServer | undefined> {
 		if (this.empty) return undefined;
 		if (this.server && this.url) return this.descriptor();

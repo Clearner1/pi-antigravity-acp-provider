@@ -44,6 +44,24 @@ const user = (content: string, timestamp = 1): Context["messages"][number] => ({
 
 // Synthetic ACP processes only: no Google account or real agent actions.
 describe("permission policy and lifecycle", () => {
+	it("sends session tool routing on fresh and warm prompts only when Pi tools are exposed", async () => {
+		const { runtime, entries } = setup();
+		const first = await drain(runtime.stream(model, { messages: [user("hello")], tools }, { sessionId: "routing", apiKey: "test-key" }));
+		await drain(runtime.stream(model, { messages: [user("hello"), first, user("next", 2)], tools }, { sessionId: "routing", apiKey: "test-key" }));
+		const prompts = entries().filter((entry) => entry.method === "session/prompt");
+		expect(prompts).toHaveLength(2);
+		for (const entry of prompts) {
+			expect(entry.prompt).toEqual(expect.arrayContaining([
+				expect.objectContaining({ type: "resource", resource: expect.objectContaining({
+					uri: "urn:pi:antigravity-acp:tool-routing",
+					text: expect.stringContaining("Available Pi MCP tools: pi_echo."),
+				}) }),
+			]));
+		}
+		await turn(runtime, [user("no tools")], "without-tools");
+		expect(JSON.stringify(entries().filter((entry) => entry.method === "session/prompt").at(-1)?.prompt)).not.toContain("urn:pi:antigravity-acp:tool-routing");
+	});
+
 	it.each(["no-mode-metadata", "no-default-mode"])("refuses unconfirmed new session policy: %s", async (scenario) => {
 		const { runtime, entries } = setup(scenario, "default");
 		const message = await turn(runtime, [user("hello")]);
