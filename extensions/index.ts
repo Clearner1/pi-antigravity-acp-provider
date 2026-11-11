@@ -240,6 +240,7 @@ export function registerAntigravityAcp(pi: ExtensionAPI, connectionFactory?: Ant
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
+		runtime.setSessionCwd(ctx.sessionManager.getSessionId(), ctx.cwd);
 		if (loadConfig().runtimeUpdates !== "notify") return;
 		try {
 			const update = await checkAntigravityAcpUpdate();
@@ -259,6 +260,10 @@ export function registerAntigravityAcp(pi: ExtensionAPI, connectionFactory?: Ant
 		} catch {
 			// Update checks are advisory and must not interrupt Pi startup.
 		}
+	});
+
+	pi.on("before_agent_start", (_event, ctx) => {
+		runtime.setSessionCwd(ctx.sessionManager.getSessionId(), ctx.cwd);
 	});
 
 	pi.on("session_shutdown", async (event, ctx) => {

@@ -17,6 +17,7 @@ import {
 } from "@earendil-works/pi-ai";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { createHash } from "node:crypto";
+import path from "node:path";
 
 import {
 	clearAntigravityCredentials,
@@ -155,6 +156,7 @@ export class AntigravityRuntime {
 	private bindingEpoch = 0;
 	private readonly activeConnections = new Set<AntigravityAcpConnection>();
 	private readonly queues = new Map<string, Promise<void>>();
+	private readonly sessionCwds = new Map<string, string>();
 	private modeChanges = Promise.resolve();
 
 	private readonly connectionFactory: AntigravityConnectionFactory;
@@ -451,9 +453,14 @@ export class AntigravityRuntime {
 		return this.closePromise ??= this.closeBindings();
 	}
 
+	setSessionCwd(piSessionId: string, cwd: string): void {
+		this.sessionCwds.set(`sid:${piSessionId}`, path.resolve(cwd));
+	}
+
 	/** Closes one Pi session's binding but keeps its saved record so a later turn can resume it. */
 	async closeSession(piSessionId: string): Promise<void> {
 		const key = `sid:${piSessionId}`;
+		this.sessionCwds.delete(key);
 		this.queues.delete(key);
 		const binding = await this.bindings.get(key)?.catch(() => undefined);
 		if (!binding) return;
@@ -470,6 +477,7 @@ export class AntigravityRuntime {
 
 	private async closeBindings(): Promise<void> {
 		this.bindingEpoch += 1;
+		this.sessionCwds.clear();
 		const pending = [...this.bindings.values()];
 		this.bindings.clear();
 		for (const binding of this.resolvedBindings) {
@@ -753,7 +761,11 @@ export class AntigravityRuntime {
 	): Promise<Binding> {
 		this.assertActive();
 		const existing = this.bindings.get(key);
-		if (existing) return existing;
+		if (existing) {
+			const binding = await existing;
+			if (binding.cwd === (this.sessionCwds.get(key) ?? process.cwd())) return binding;
+			await this.invalidateBinding(binding);
+		}
 		const created = this.createBinding(key, model, acpModelId, apiKey, writer, tools ?? [], signal).catch((error) => {
 			if (this.bindings.get(key) === created) this.bindings.delete(key);
 			throw error;
@@ -771,7 +783,7 @@ export class AntigravityRuntime {
 		tools: NonNullable<Context["tools"]>,
 		signal?: AbortSignal,
 	): Promise<Binding> {
-		const cwd = process.cwd();
+		const cwd = this.sessionCwds.get(key) ?? process.cwd();
 		let binding: Binding | undefined;
 		let bridge: PiMcpBridge | undefined;
 		const epoch = this.bindingEpoch;

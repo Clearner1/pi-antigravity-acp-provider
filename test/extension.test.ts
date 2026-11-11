@@ -51,7 +51,7 @@ afterEach(async () => {
 });
 
 // Pi loads each extension instance with a fresh module graph.
-async function load(sessionId: string, events?: FakeExtensionApi["api"]["events"]) {
+async function load(sessionId: string, events?: FakeExtensionApi["api"]["events"], cwd = root) {
 	vi.resetModules();
 	const { registerAntigravityAcp } = await import("../extensions/index.js");
 	const pi = createFakeExtensionApi(registry);
@@ -62,7 +62,7 @@ async function load(sessionId: string, events?: FakeExtensionApi["api"]["events"
 		connections.push(connection);
 		return connection;
 	});
-	const ctx = createFakeContext({ sessionId, cwd: root });
+	const ctx = createFakeContext({ sessionId, cwd });
 	loaded.push({ pi, ctx });
 	return { pi, ctx };
 }
@@ -80,6 +80,33 @@ function stream(messages: Context["messages"], sessionId: string, provider = reg
 
 // Synthetic ACP processes only: no Google account or real agent actions.
 describe("extension entry point", () => {
+	it("isolates ACP working directories per Pi session and rebinds after a directory change", async () => {
+		const firstCwd = path.join(root, "first agent");
+		const secondCwd = path.join(root, "second agent");
+		fs.mkdirSync(firstCwd);
+		fs.mkdirSync(secondCwd);
+		const first = await load("cwd-first", undefined, firstCwd);
+		const second = await load("cwd-second", undefined, secondCwd);
+		await first.pi.emit("session_start", { reason: "startup" }, first.ctx);
+		await second.pi.emit("before_agent_start", {}, second.ctx);
+		const replies = await Promise.all([
+			stream([user("hello")], "cwd-first"),
+			stream([user("hello")], "cwd-second"),
+		]);
+		expect(replies.map((reply) => reply.stopReason)).toEqual(["stop", "stop"]);
+		const calls = () => fs.readFileSync(log, "utf8").trim().split("\n")
+			.map((line) => JSON.parse(line)).filter((call) => call.method === "session/new");
+		expect(calls()).toEqual(expect.arrayContaining([
+			expect.objectContaining({ cwd: firstCwd, processCwd: fs.realpathSync(firstCwd) }),
+			expect.objectContaining({ cwd: secondCwd, processCwd: fs.realpathSync(secondCwd) }),
+		]));
+		first.ctx.cwd = secondCwd;
+		await first.pi.emit("before_agent_start", {}, first.ctx);
+		expect((await stream([user("hello"), replies[0]!, user("next", 2)], "cwd-first")).stopReason).toBe("stop");
+		expect(calls()).toHaveLength(3);
+		expect(calls().at(-1)).toMatchObject({ cwd: secondCwd, processCwd: fs.realpathSync(secondCwd) });
+	});
+
 	it("registers the provider, permission tool, and commands", async () => {
 		const { pi } = await load("parent");
 		expect(registry.get("antigravity-acp")).toBe(pi.providers[0]);
