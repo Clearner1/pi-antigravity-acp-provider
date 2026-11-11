@@ -54,6 +54,20 @@ Loopback MCP traffic is exempted from proxies in the ACP child environment. Expl
 
 Standalone Pi builds also need Node.js to run the ACP supervisor. The provider looks for `node` or `nodejs` on `PATH`; set `NODE` to the executable path if neither is available. On NixOS with Home Manager, `programs.pi-coding-agent.extraPackages = [ pkgs.nodejs ];` adds Node to Pi's `PATH`. An explicit `SSL_CERT_FILE` is preserved; otherwise the provider uses `NIX_SSL_CERT_FILE` or a readable system CA bundle when available.
 
+### Use an installed native agy CLI
+
+YOLO launches the native CLI with `--dangerously-skip-permissions`, using its normal `default` operation mode. Switching away from YOLO closes that process so the startup bypass cannot leak into a stricter mode. No terminal or file-operation confirmation is requested in YOLO; this grants the agent the operating-system access of the user running it.
+
+The native adapter currently supports `default` and YOLO. The standalone server's `auto_edit` mode is not mapped to native CLI modes.
+
+Set `AGY_ACP_BIN` to the actual `agy` executable to launch `agy acp --stdio` instead of the separately downloaded server:
+
+```bash
+AGY_ACP_BIN="$HOME/.local/bin/agy" pi --provider antigravity-acp --model gemini-3.8-flash --thinking medium
+```
+
+This reuses the native CLI's login and installation. Pi's session permission mode still applies. Native agy 1.5.5 was live-tested with HTTP MCP tools but omits that capability from initialization; the adapter recognizes that exact release. Explicit negative capabilities and unverified versions remain unsupported. The managed standalone runtime remains the default when no override is supplied.
+
 ### SSH and headless Google login
 
 When Pi is running over SSH, or on Linux without `DISPLAY`/`WAYLAND_DISPLAY`, `/login` automatically uses a manual browser relay:

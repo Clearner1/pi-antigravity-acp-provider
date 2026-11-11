@@ -71,7 +71,9 @@ for await (const line of rl) {
 			id,
 			result: {
 				protocolVersion: 1,
-				agentInfo: { name: "fake-gemini", version: "1.0.0" },
+				agentInfo: scenario?.startsWith("native-cli")
+					? { name: "Antigravity ACP Server", version: scenario === "native-cli-future" ? "1.5.6" : "1.5.5" }
+					: { name: "fake-gemini", version: "1.0.0" },
 				authMethods: [
 					{ id: "oauth-personal", name: "Log in with Google" },
 					{ id: "api", name: "Gemini API key", _meta: { "api-key": { provider: "google" } } },
@@ -79,7 +81,8 @@ for await (const line of rl) {
 				agentCapabilities: {
 					loadSession: true,
 					promptCapabilities: { image: true, embeddedContext: true },
-					mcpCapabilities: { http: scenario !== "no-mcp" },
+					...(scenario?.startsWith("native-cli") && scenario !== "native-cli-no-mcp"
+						? {} : { mcpCapabilities: { http: scenario !== "no-mcp" && scenario !== "native-cli-no-mcp" } }),
 					sessionCapabilities: { resume: {} },
 				},
 			},
@@ -347,7 +350,7 @@ for await (const line of rl) {
 
 function sessionModes(restored = false) {
 	if (scenario === "no-mode-metadata") return undefined;
-	const unavailable = scenario === "no-auto-edit-mode" ? "auto_edit"
+	const unavailable = scenario === "native-cli-no-yolo" ? "yolo" : scenario === "no-auto-edit-mode" ? "auto_edit"
 		: scenario === "no-default-mode" || (restored && scenario === "no-default-on-restore") ? "default" : undefined;
 	return { currentModeId: mode, availableModes: ["default", "auto_edit", "yolo"].filter((id) => id !== unavailable).map((id) => ({ id, name: id })) };
 }

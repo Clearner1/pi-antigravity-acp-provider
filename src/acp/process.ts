@@ -15,6 +15,7 @@ let nextGeneration = 1;
 
 export interface AntigravityProcessOptions {
 	cwd: string;
+	dangerouslySkipPermissions?: boolean;
 	entryPath?: string;
 	command?: string;
 	args?: string[];
@@ -120,6 +121,7 @@ export function applyDefaultTlsEnvironment(
 
 export class AntigravityProcess {
 	readonly generation = nextGeneration++;
+	readonly nativeCliPermissionBypass: boolean;
 	readonly child: ChildProcessWithoutNullStreams;
 	readonly input: ReadableStream<Uint8Array>;
 	readonly output: WritableStream<Uint8Array>;
@@ -132,6 +134,7 @@ export class AntigravityProcess {
 	constructor(options: AntigravityProcessOptions) {
 		let command: string;
 		let args: string[];
+		let nativeCliPermissionBypass = false;
 		if (options.command) {
 			command = options.command;
 			args = options.args ?? [];
@@ -139,10 +142,12 @@ export class AntigravityProcess {
 			const nodeBinary = resolveNodeBinary(options.env?.NODE, options.env ?? process.env);
 			const launch = options.entryPath
 				? { command: nodeBinary, args: [options.entryPath, ...(options.args ?? [])] }
-				: resolveAntigravityAcpLaunch();
+				: resolveAntigravityAcpLaunch(options.dangerouslySkipPermissions);
+			nativeCliPermissionBypass = launch.args[0] === "acp" && launch.args.includes("--dangerously-skip-permissions");
 			command = nodeBinary;
 			args = [resolveSupervisorEntry(), "--command", launch.command, ...launch.args];
 		}
+		this.nativeCliPermissionBypass = nativeCliPermissionBypass;
 		let resolveExit!: (exit: ProcessExit) => void;
 		this.exited = new Promise((resolve) => {
 			resolveExit = resolve;

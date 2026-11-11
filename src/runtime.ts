@@ -395,7 +395,7 @@ export class AntigravityRuntime {
 			await Promise.all([...this.resolvedBindings].map(async (binding) => {
 				if (binding.mode === mode && this.confirmedMode(binding) === mode) return;
 				// Never change policy under an executing turn or leave an unsupported session alive.
-				if (!binding.turnCompletion && supportsMode(binding.connection.getSessionState(binding.session.sessionId), mode)) {
+				if (!binding.connection.process.nativeCliPermissionBypass && !binding.turnCompletion && supportsMode(binding.connection.getSessionState(binding.session.sessionId), mode)) {
 					try {
 						await binding.connection.setMode(binding.session.sessionId, mode);
 						if (this.confirmedMode(binding) === mode) { binding.mode = mode; return; }
@@ -433,7 +433,7 @@ export class AntigravityRuntime {
 					waitingForPermission: binding.permission !== undefined,
 					waitingForTools: binding.pendingTools.size,
 					agentVersion: binding.initialize.agentInfo?.version,
-					mcpHttp: binding.initialize.agentCapabilities?.mcpCapabilities?.http === true,
+					mcpHttp: supportsHttpMcp(binding.initialize),
 					restored: binding.restored,
 					ignoredStdoutNoiseLines: binding.connection.process.ignoredStdoutNoiseLines,
 					...(includeStderr ? { stderrTail: binding.connection.process.stderrTail } : {}),
@@ -793,6 +793,7 @@ export class AntigravityRuntime {
 		const epoch = this.bindingEpoch;
 		const connection = this.createConnection({
 			cwd,
+			dangerouslySkipPermissions: this.permissionMode === "yolo",
 			handlers: {
 				onUpdate: (notification) => this.consumeUpdate(binding, notification),
 				onPermission: (request) => this.requestPermission(binding, request),
@@ -803,11 +804,11 @@ export class AntigravityRuntime {
 			this.assertEpoch(epoch);
 			await authenticateForCredential(connection, initialize, apiKey, signal);
 			this.assertEpoch(epoch);
-			const omittedTools = initialize.agentCapabilities?.mcpCapabilities?.http === true
+			const omittedTools = supportsHttpMcp(initialize)
 				? planToolProjection(tools)
 				: tools.filter((tool) => tool.name !== PERMISSION_TOOL_NAME).map((tool) => ({ name: tool.name, reason: "Agent did not advertise MCP over HTTP" }));
 			let mcpServer;
-			if (tools.length > 0 && initialize.agentCapabilities?.mcpCapabilities?.http === true) {
+			if (tools.length > 0 && supportsHttpMcp(initialize)) {
 				bridge = new PiMcpBridge({
 					tools,
 					onCall: (invocation) => this.requestPiTool(binding, invocation),
@@ -842,12 +843,13 @@ export class AntigravityRuntime {
 			session ??= await connection.newSession(cwd, signal, mcpServers);
 			this.assertEpoch(epoch);
 			const mode = this.permissionMode;
-			if (!supportsMode(session, mode)) {
+			const sessionMode = mode === "yolo" && connection.process.nativeCliPermissionBypass ? "default" : mode;
+			if (!supportsMode(session, sessionMode)) {
 				if (piSessionId) this.sessionStore?.remove(piSessionId);
 				throw new AntigravityAcpError("protocol", `Antigravity ${restored ? "restored" : "new"} session did not advertise permission mode '${mode}'; refusing to prompt`);
 			}
-			if (sessionModes(session)?.currentModeId !== mode) await connection.setMode(session.sessionId, mode, signal);
-			if (sessionModes(connection.getSessionState(session.sessionId))?.currentModeId !== mode) {
+			if (sessionModes(session)?.currentModeId !== sessionMode) await connection.setMode(session.sessionId, sessionMode, signal);
+			if (sessionModes(connection.getSessionState(session.sessionId))?.currentModeId !== sessionMode) {
 				throw new AntigravityAcpError("protocol", "Antigravity did not confirm the requested permission mode");
 			}
 			const currentModel = sessionModels(session)?.currentModelId;
@@ -1012,7 +1014,8 @@ export class AntigravityRuntime {
 	}
 
 	private confirmedMode(binding: Binding): string | undefined {
-		return sessionModes(binding.connection.getSessionState(binding.session.sessionId))?.currentModeId;
+		const mode = sessionModes(binding.connection.getSessionState(binding.session.sessionId))?.currentModeId;
+		return binding.mode === "yolo" && binding.connection.process.nativeCliPermissionBypass && mode === "default" ? "yolo" : mode;
 	}
 
 	private noteContinuationInstructions(binding: Binding, context: Context): void {
@@ -1045,6 +1048,13 @@ export class AntigravityRuntime {
 	private assertActive(): void {
 		if (this.disposed) throw new AntigravityAcpError("process_exit", "Antigravity ACP runtime is closed");
 	}
+}
+
+function supportsHttpMcp(initialize: InitializeResponse): boolean {
+	const mcp = initialize.agentCapabilities?.mcpCapabilities;
+	// shortcut: native agy 1.5.5 accepts HTTP MCP but omits its capability; remove when Google advertises it.
+	return mcp?.http === true || (mcp === undefined &&
+		initialize.agentInfo?.name === "Antigravity ACP Server" && initialize.agentInfo.version === "1.5.5");
 }
 
 async function authenticateForCredential(

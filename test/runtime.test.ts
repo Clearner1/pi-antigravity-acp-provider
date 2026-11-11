@@ -343,9 +343,9 @@ describe("AntigravityRuntime", () => {
 		}
 	});
 
-	it("round-trips an MCP call through a genuine Pi tool call", async () => {
+	it.each([undefined, "native-cli"])("round-trips an MCP call through a genuine Pi tool call (agent=%s)", async (scenario) => {
 		const runtime = new AntigravityRuntime(
-			(options) => new AntigravityAcpConnection({ ...options, command: process.execPath, args: [fakeAgent] }),
+			(options) => new AntigravityAcpConnection({ ...options, command: process.execPath, args: [fakeAgent, ...(scenario ? [scenario] : [])] }),
 		);
 		try {
 			const tools = [

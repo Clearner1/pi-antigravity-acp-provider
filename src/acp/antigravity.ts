@@ -10,11 +10,15 @@ export interface AntigravityLaunch {
 	source: "env" | "user-bin" | "managed" | "path";
 }
 
-export function resolveAntigravityAcpLaunch(): AntigravityLaunch {
+export function resolveAntigravityAcpLaunch(dangerouslySkipPermissions = false): AntigravityLaunch {
 	const env = process.env.AGY_ACP_BIN?.trim();
 	if (env) {
 		const command = expandHome(env);
-		if (executable(command)) return directOrWrapper(command, "env");
+		if (executable(command)) {
+			const launch = directOrWrapper(command, "env");
+			if (dangerouslySkipPermissions && launch.args[0] === "acp") launch.args.push("--dangerously-skip-permissions");
+			return launch;
+		}
 	}
 
 	// Prefer the provider's verified active release over ambient executables.
@@ -146,6 +150,9 @@ export function clearAntigravityCredentials(
 }
 
 function directOrWrapper(command: string, source: AntigravityLaunch["source"]): AntigravityLaunch {
+	if (["agy", "agy.exe"].includes(path.basename(command).toLowerCase())) {
+		return { command, args: ["acp", "--stdio"], source };
+	}
 	try {
 		const fd = fs.openSync(command, "r");
 		const bytes = Buffer.alloc(64);

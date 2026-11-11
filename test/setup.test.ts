@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { readBundledRuntimeManifest, latestManifestRelease } from "../src/acp/runtime-manifest.js";
+import { resolveAntigravityAcpLaunch } from "../src/acp/antigravity.js";
 import {
 	adoptLegacyCurrentRelease,
 	ensureAntigravityAcpReady,
@@ -23,6 +24,14 @@ afterEach(() => {
 });
 
 describe("external runtime ownership", () => {
+	it("launches an explicitly selected native agy CLI through its ACP subcommand", () => {
+		const binary = path.join(temporaryDirectory(), "agy");
+		fs.writeFileSync(binary, "native-cli-placeholder", { mode: 0o755 });
+		vi.stubEnv("AGY_ACP_BIN", binary);
+		expect(resolveAntigravityAcpLaunch()).toEqual({ command: binary, args: ["acp", "--stdio"], source: "env" });
+		expect(resolveAntigravityAcpLaunch(true)).toEqual({ command: binary, args: ["acp", "--stdio", "--dangerously-skip-permissions"], source: "env" });
+	});
+
 	it("refuses explicit updates before any network request", async () => {
 		const binary = path.join(temporaryDirectory(), "external-agent");
 		fs.writeFileSync(binary, "external", { mode: 0o755 });

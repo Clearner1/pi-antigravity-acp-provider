@@ -20,6 +20,7 @@ const roots: string[] = [];
 const runtimes: AntigravityRuntime[] = [];
 afterEach(async () => {
 	await Promise.all(runtimes.splice(0).map((runtime) => runtime.close()));
+	vi.unstubAllEnvs();
 	for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -44,6 +45,28 @@ const user = (content: string, timestamp = 1): Context["messages"][number] => ({
 
 // Synthetic ACP processes only: no Google account or real agent actions.
 describe("permission policy and lifecycle", () => {
+	it.skipIf(process.platform === "win32")("uses the native YOLO startup flag and removes it when changing policy", async () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "native-yolo-")); roots.push(root);
+		const binary = path.join(root, "agy");
+		const argvLog = path.join(root, "argv.jsonl");
+		fs.writeFileSync(binary, `#!${process.execPath}\nrequire('node:fs').appendFileSync(${JSON.stringify(argvLog)}, JSON.stringify(process.argv.slice(2))+'\\n');\nprocess.argv[2]='native-cli-no-yolo';\nimport(${JSON.stringify(fakeAgent)});\n`, { mode: 0o755 });
+		vi.stubEnv("AGY_ACP_BIN", binary);
+		const runtime = new AntigravityRuntime(undefined, "yolo", new AcpSessionStore(path.join(root, "sessions.json")));
+		runtimes.push(runtime);
+		const first = await turn(runtime, [user("hello")]);
+		expect(first.stopReason).toBe("stop");
+		expect((await runtime.snapshot()).processes[0]?.confirmedPermissionMode).toBe("yolo");
+		await runtime.setPermissionMode("default");
+		expect((await runtime.snapshot()).bindings).toBe(0);
+		expect((await turn(runtime, [user("hello"), first, user("next", 2)])).stopReason).toBe("stop");
+		expect((await runtime.snapshot()).processes[0]?.confirmedPermissionMode).toBe("default");
+		const launches = fs.readFileSync(argvLog, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+		expect(launches).toEqual([
+			["acp", "--stdio", "--dangerously-skip-permissions"],
+			["acp", "--stdio"],
+		]);
+	});
+
 	it("sends session tool routing on fresh and warm prompts only when Pi tools are exposed", async () => {
 		const { runtime, entries } = setup();
 		const first = await drain(runtime.stream(model, { messages: [user("hello")], tools }, { sessionId: "routing", apiKey: "test-key" }));
@@ -432,7 +455,7 @@ describe("context handoff transport", () => {
 });
 
 describe("tool projection diagnostics", () => {
-	it.each([undefined, "no-mcp"])("reports omitted tools and their reasons (agent=%s)", async (scenario) => {
+	it.each([undefined, "no-mcp", "native-cli-no-mcp", "native-cli-future"])("reports omitted tools and their reasons (agent=%s)", async (scenario) => {
 		const { runtime } = setup(scenario);
 		const writer = runtime.stream(model, { tools: [{ name: "unsupported", description: "bad", parameters: Type.String() }], messages: [user("hello")] }, { sessionId: "omissions", apiKey: "test-key" });
 		await drain(writer);
