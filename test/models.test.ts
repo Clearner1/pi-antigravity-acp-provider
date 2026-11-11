@@ -4,6 +4,12 @@ import { FALLBACK_MODELS, projectModels, resolveAcpModelId, splitEffortSuffix } 
 import { createAntigravityProvider } from "../src/provider.js";
 
 describe("projectModels", () => {
+	it.each(["low", "medium", "high"] as const)("supports explicit Carbon selection at %s effort", (effort) => {
+		const carbon = FALLBACK_MODELS.find((model) => model.id === "gemini-4-carbon");
+		expect(carbon).toBeDefined();
+		expect(resolveAcpModelId(carbon!, effort)).toBe(`gemini-4-carbon-${effort}`);
+	});
+
 	it("keeps Flash as the conservative offline default while allowing explicit Argon selection", () => {
 		expect(FALLBACK_MODELS[0]?.id).toBe("gemini-3.8-flash");
 		expect(FALLBACK_MODELS.some((model) => model.id === "gemini-4-argon")).toBe(true);
